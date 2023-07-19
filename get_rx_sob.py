@@ -7,7 +7,7 @@ import os
 import sphenix_pytpc.damserv_grpc_client as client
 
 parser = argparse.ArgumentParser(
-                    prog = 'get_rx_ready.py',
+                    prog = 'get_rx_sob.py',
                     description = 'Print FEE/DAM link status',
                     epilog = '')
 parser.add_argument('-d', '--damid', default=0)
@@ -16,6 +16,6 @@ args = parser.parse_args()
 
 d = client.Dam(args.damid, args.connect)
 s = d.fee_status()
-print( s.rx_ready )
+print( s.rx_sob )
 d.channel.close()
 
