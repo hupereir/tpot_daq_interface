@@ -13,7 +13,7 @@ def main():
     
     result = subprocess.run( ['ssh', 'ebdc39', '-x', fee_init_command], stdout=subprocess.PIPE)
     output = result.stdout.decode('utf8');
-    print( output )
+    # print( output )
 
     # now run over all FEEs independantly, up to five times or untill there is no error message
     # these are TPOT links
@@ -26,7 +26,7 @@ def main():
         for i in range(0,10):
             result = subprocess.run( ['ssh', 'ebdc39', '-x', fee_init_command], stdout=subprocess.PIPE)
             output = result.stdout.decode('utf8');
-            print( output )
+            # print( output )
     
             # parse output for errors and break if none found
             error = (
