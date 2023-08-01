@@ -3,6 +3,7 @@ import argparse
 import os.path
 import subprocess
 import re
+import glob
 
 def parse_runs( input_runlist ):
   output_runlist = []
@@ -39,16 +40,27 @@ def main():
   
   runlist = parse_runs( args.run_numbers )
   type = args.type
-  print( runlist )	
 
+  # print runs
+  print( f'runlist: {runlist}'  )	
+
+  filenames = []
   for run in runlist:
-	  
-    source = f'/bbox/commissioning/TPOT/{type}/TPOT_ebdc39_{type}-{run:08d}-0000.evt'
-    destination  = f'/sdcc/sphnxpro/commissioning/TPOT/{type}/TPOT_ebdc39_{type}-{run:08d}-0000.evt'
-	  
+    
+    source = f'/bbox/commissioning/TPOT/{type}/TPOT_ebdc39_{type}-{run:08d}-*.evt'
+    filenames += glob.glob(source)
+
+  for source in filenames:
+    print( source )
+
+  print()
+  for source in filenames:
+    	  
     if not os.path.isfile(source):
       print( f'file {source} not found' )
       continue
+
+    destination  = f'/sdcc/sphnxpro/commissioning/TPOT/{type}/.'                                                                                                        
 	
     print( f'{source} -> {destination}' )
     command = f'rsync -P {source} {destination}';
