@@ -12,7 +12,8 @@ def main():
 
 
     # new temporary initialization command from John K. (April 29, 2024)
-    fee_init_command = '/home/kuzew/fee_config.py triggered  --pre-samples 103 --samples 50 --shape-gain 6'
+    # fee_init_command = '/home/kuzew/fee_config.py triggered  --pre-samples 103 --samples 50 --shape-gain 6'
+    fee_init_command = '/home/kuzew/fee_init triggered --connect-tpot --pre-samples 103 --samples 50 --shape-gain 6'
 
     print( 'fee_init_command: ', fee_init_command )
     
