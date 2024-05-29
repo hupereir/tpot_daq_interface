@@ -13,8 +13,8 @@ def main():
 
     # new temporary initialization command from John K. (April 29, 2024)
     # fee_init_command = '/home/kuzew/fee_config.py triggered  --pre-samples 103 --samples 50 --shape-gain 6'
-    fee_init_command = '/home/kuzew/fee_init triggered --connect-tpot --pre-samples 103 --samples 50 --shape-gain 6'
-
+    fee_init_command = '/home/kuzew/fee_init triggered --connect-tpot --pre-samples 86 --samples 25 --shape-gain 6'
+    
     print( 'fee_init_command: ', fee_init_command )
     
     result = subprocess.run( ['ssh', 'ebdc39', '-x', fee_init_command], stdout=subprocess.PIPE)
@@ -26,7 +26,8 @@ def main():
 
     # now run over all FEEs independantly, up to five times or untill there is no error message
     # these are TPOT links
-    fee_list = [0, 1, 5, 6, 7, 8, 9, 11, 12, 14, 15, 18, 19, 23, 24, 25]
+#     fee_list = [0, 1, 5, 6, 7, 8, 9, 11, 12, 14, 15, 18, 19, 23, 24, 25]
+    fee_list = [0, 1, 5, 6, 7, 8, 9, 12, 14, 15, 18, 19, 21, 23, 24, 25]
     for channel in  fee_list:
         fee_init_command = fee_init_base_command + ' --fee ' + str(channel) + ' --no-stream-enable'
         print( 'fee_init_command: ', fee_init_command )

@@ -1,0 +1,437 @@
+#!/opt/venvs/sphenix-pytpc/bin/python
+import sys, os
+import time
+import argparse
+import concurrent.futures
+
+from sphenix_pytpc import fee
+import sphenix_pytpc.damserv_grpc_client as client
+
+backend = 'grpc'
+
+class Retry(object):
+    def __init__(self, retrys=100, inforce_retry=2):
+        self.retry = retrys
+        self.inforce_retry = inforce_retry
+        self.retry_count = 0
+        self.total_retry = 0
+        self.run_count = 0
+
+    def read(self, run_f, r_args=None, r_kwargs=None):
+        self.retry_count = 0
+        self.run_count += 1
+        run_args = r_args if r_args else []
+        run_kwargs = r_kwargs if r_kwargs else {}
+        for i in range(0, self.retry):
+            try:
+                ret = run_f(*run_args, **run_kwargs)
+                if (i > self.inforce_retry):
+                    return ret
+            except RuntimeError:
+                self.retry_count += 1
+                self.total_retry += 1
+            except RuntimeWarning:
+                self.retry_count += 1
+                self.total_retry += 1
+
+    def check(self, run_f, check_f, expected_val, r_args=None, r_kwargs=None, c_args=None, c_kwargs=None):
+        self.retry_count = 0
+        self.run_count += 1
+        run_args = r_args if r_args else []
+        run_kwargs = r_kwargs if r_kwargs else {}
+        chk_args = c_args if c_args else []
+        chk_kwargs = c_kwargs if c_kwargs else {}
+        for i in range(0, self.retry):
+            try:
+                run_f(*run_args, **run_kwargs)
+                if (check_f(*chk_args, **chk_kwargs) == expected_val):
+                    if (i > self.inforce_retry):
+                        break
+                else:
+                    self.retry_count += 1
+                    self.total_retry += 1
+            except RuntimeError:
+                self.retry_count += 1
+                self.total_retry += 1
+            except RuntimeWarning:
+                self.retry_count += 1
+                self.total_retry += 1
+
+    def only(self, run_f,  r_args=None, r_kwargs=None):
+        self.retry_count = 0
+        self.run_count += 1
+        run_args = r_args if r_args else []
+        run_kwargs = r_kwargs if r_kwargs else {}
+        for i in range(0, self.retry):
+            try:
+                run_f(*run_args, **run_kwargs)
+                if (i > self.inforce_retry):
+                    break
+            except RuntimeError:
+                self.retry_count += 1
+                self.total_retry += 1
+            except RuntimeWarning:
+                self.retry_count += 1
+                self.total_retry += 1
+
+    def is_successful(self):
+        return self.retry_count < self.retry
+
+    def is_totally_successful(self):
+        return self.total_retry < (self.retry*self.run_count)
+
+class FeeInit(object):
+    def __init__(self, hostname, fee_list, do_fee_stream_enable):
+        self.d = client.Dam(0, "%s:50051" % (hostname))
+        self.hostname = hostname
+        self.fee_list = fee_list
+        self.fee = []
+        self.do_fee_stream_enable = do_fee_stream_enable
+        for i in self.fee_list:
+            self.fee.append(fee(i, backend=backend, ip_addr="%s:50051" % (hostname)))
+
+    def test(self):
+        for i, f in enumerate(self.fee):
+            print(" %s - FEE %i: %s" % (self.hostname, i, f.board_sn()))
+
+    def fee_link_reset(self):
+        self.d.reg.si5345_pll.program = 1
+        while self.d.reg.si5345_pll.nLOL != 1:
+            time.sleep(0.1)
+
+    def fee_ready(self, i):
+        timeout = 0
+        while (self.d.reg.fee_reply[i].rx_ready != 1) and (timeout < 10):
+            time.sleep(0.1)
+            timeout += 1
+        return (self.d.reg.fee_reply[i].rx_ready == 1) and (timeout < 10)
+
+    def fee_group_ready(self):
+        timeout = 0
+        ready = False 
+        time.sleep(5)
+        while (not ready) and (timeout < 24):
+            ready = True
+            for i in self.fee_list:
+                ready &= bool(self.d.reg.fee_reply[i].rx_ready)
+            time.sleep(1)
+            timeout += 1
+        return ready
+
+    def link_init(self):
+        self.d.reset()
+
+        self.d.reg.gtm_recovered_clock = 1
+        if self.do_fee_stream_enable:
+            self.d.reg.fee_stream_enable = 0
+        timeout = 0
+
+        self.fee_link_reset()
+
+        while not self.fee_group_ready():
+            self.fee_link_reset()
+
+    def fee_init(self, elink_enable):
+        if self.do_fee_stream_enable:
+            self.d.reg.fee_stream_enable = 0
+
+        for i in self.fee_list:
+            f = fee(i, backend=backend)
+            f.reg_write(0x200, elink_enable & 0xffff)
+            f.reg_write(0x201, elink_enable >> 16)
+            print(i, hex(f.reg_read(0x200)), hex(f.reg_read(0x201)))
+
+        if self.do_fee_stream_enable:
+            for i in self.fee_list:
+                self.d.reg.fee_stream_enable |= (1 << i)
+
+    def sampa_init(self, twlen, pre_trig, sampa_reset, elink_enable, shape_gain):
+        if self.do_fee_stream_enable:
+            self.d.reg.fee_stream_enable = 0
+
+        for i in self.fee_list:
+            f = fee(i, backend=backend)
+
+            if sampa_reset:
+                f.sampa_reset()
+                time.sleep(10)
+                print(f.elink_status())
+
+            for s in f.sampa:
+                try:
+                    s.set_time_window_length(twlen)
+                    if s.get_time_window_length() != twlen:
+                        print(s, end=": ")
+                        print("WARNING: Unexpected time window length!")
+                except Exception as e:
+                    print(s, end=": ")
+                    print("Can't set time window length due to", e)
+
+                try:
+                    s.set_pre_trigger(pre_trig)
+                    if s.get_pre_trigger() != pre_trig:
+                        print(s, end=": ")
+                        print("WARNING: Unexpected pre trigger length!")
+                except Exception as e:
+                    print(s, end=": ")
+                    print("Can't set pre trigger due to", e)
+                    continue
+
+            f.reg_write(0x300, shape_gain)
+            f.reg_write(0x200, elink_enable & 0xffff)
+            f.reg_write(0x201, elink_enable >> 16)
+            print(i, hex(f.reg_read(0x200)), hex(f.reg_read(0x201)))
+
+        if self.do_fee_stream_enable:
+            for i in self.fee_list:
+                self.d.reg.fee_stream_enable |= (1 << i)
+
+    def stream_enable(self): 
+        if self.do_fee_stream_enable:
+            for i in self.fee_list:
+                self.d.reg.fee_stream_enable |= (1 << i)
+
+    def stream_disable(self): 
+        if self.do_fee_stream_enable:
+            for i in self.fee_list:
+                self.d.reg.fee_stream_enable &= ~(1 << i)
+
+    def setup_sampa_zero_sup_bcone(self, s, offset, threshold, pre_trig_samples, pre_samples, post_samples, window_length):
+        retry_count = 0
+        zscfg = (1 << 8) | (pre_samples << 2) | (post_samples << 5)
+        dpcfg = 0x00 
+        vacfg = 0x20
+
+        retry = Retry(inforce_retry=1)
+        retry.only(s.send_command, r_args=["SOFTRST"])
+        if (not retry.is_successful()):
+            return retry.is_successful()
+        retry.check(s.write, s.read, vacfg, r_args=["VACFG", vacfg], c_args=["VACFG"])
+        if (not retry.is_successful()):
+            return retry.is_successful()
+        retry.check(s.set_pre_trigger, s.get_pre_trigger, pre_trig_samples, r_args=[pre_trig_samples])
+        retry.check(s.set_time_window_length, s.get_time_window_length, window_length, r_args=[window_length])
+        retry.check(s.set_acq_start, s.get_acq_start, 0, r_args=[0])
+        retry.check(s.set_acq_stop, s.get_acq_stop, 360, r_args=[360])
+        retry.check(s.channel_write, s.channel_read, offset, r_args=["ZSOFF", 0, offset], r_kwargs={'broadcast': True}, c_args=["ZSOFF", 0])
+        retry.check(s.channel_write, s.channel_read, threshold, r_args=["ZSTHR", 0, threshold], r_kwargs={'broadcast': True}, c_args=["ZSTHR", 0])
+        retry.check(s.channel_write, s.channel_read, zscfg, r_args=["ZSCFG", 0, zscfg], r_kwargs={'broadcast': True}, c_args=["ZSCFG", 0])
+        retry.check(s.channel_write, s.channel_read, dpcfg, r_args=["DPCFG", 0, dpcfg], r_kwargs={'broadcast': True}, c_args=["DPCFG", 0])
+        retry.only(s.send_command, r_args=["SOFTRST"])
+        return retry.is_totally_successful()
+
+    def setup_sampa_zero_sup(self, s, offset, threshold, pre_trig_samples, pre_samples, post_samples, window_length):
+        retry_count = 0
+        pre_post_sample_word = (pre_samples << 2) | (post_samples << 5)
+        dpcfg = 0x200 
+        vacfg = 0x20
+
+        retry = Retry(inforce_retry=1)
+        retry.only(s.send_command, r_args=["SOFTRST"])
+        if (not retry.is_successful()):
+            return retry.is_successful()
+        retry.check(s.write, s.read, vacfg, r_args=["VACFG", vacfg], c_args=["VACFG"])
+        if (not retry.is_successful()):
+            return retry.is_successful()
+        retry.check(s.set_pre_trigger, s.get_pre_trigger, pre_trig_samples, r_args=[pre_trig_samples])
+        retry.check(s.set_time_window_length, s.get_time_window_length, window_length, r_args=[window_length])
+        retry.check(s.set_acq_start, s.get_acq_start, 0, r_args=[0])
+        retry.check(s.set_acq_stop, s.get_acq_stop, 360, r_args=[360])
+        retry.check(s.channel_write, s.channel_read, dpcfg, r_args=["DPCFG", 0, dpcfg], r_kwargs={'broadcast': True}, c_args=["DPCFG", 0])
+        retry.check(s.channel_write, s.channel_read, offset, r_args=["ZSOFF", 0, offset], r_kwargs={'broadcast': True}, c_args=["ZSOFF", 0])
+        retry.check(s.channel_write, s.channel_read, threshold, r_args=["ZSTHR", 0, threshold], r_kwargs={'broadcast': True}, c_args=["ZSTHR", 0])
+        retry.check(s.channel_write, s.channel_read, pre_post_sample_word, r_args=["ZSCFG", 0, pre_post_sample_word], r_kwargs={'broadcast': True}, c_args=["ZSCFG", 0])
+        retry.only(s.send_command, r_args=["SOFTRST"])
+        return retry.is_totally_successful()
+
+    def setup_sampa_normal(self, s, pre_samples, window_length):
+        retry = Retry(inforce_retry=1)
+        retry.only(s.send_command, r_args=["SOFTRST"])
+        if (not retry.is_successful()):
+            return retry.is_successful()
+        retry.check(s.write, s.read, 0x30, r_args=["VACFG", 0x30], c_args=["VACFG"])
+        if (not retry.is_successful()):
+            return retry.is_successful()
+        retry.check(s.set_pre_trigger, s.get_pre_trigger, pre_samples, r_args=[pre_samples])
+        retry.check(s.set_time_window_length, s.get_time_window_length, window_length, r_args=[window_length])
+        retry.check(s.set_acq_start, s.get_acq_start, 0, r_args=[0])
+        retry.check(s.set_acq_stop, s.get_acq_stop, window_length, r_args=[window_length])
+        retry.check(s.channel_write, s.channel_read, 0, r_args=["DPCFG", 0, 0], r_kwargs={'broadcast': True}, c_args=["DPCFG", 0])
+        retry.check(s.channel_write, s.channel_read, 0, r_args=["ZSOFF", 0, 0], r_kwargs={'broadcast': True}, c_args=["ZSOFF", 0])
+        retry.check(s.channel_write, s.channel_read, 0, r_args=["ZSTHR", 0, 0], r_kwargs={'broadcast': True}, c_args=["ZSTHR", 0])
+        retry.check(s.channel_write, s.channel_read, 0, r_args=["ZSCFG", 0, 0], r_kwargs={'broadcast': True}, c_args=["ZSCFG", 0])
+        retry.only(s.send_command, r_args=["SOFTRST"])
+        return retry.is_totally_successful()
+
+    def configure_fee(self, ff, ctype='zsup', offset=240, thres=260, pre_trig_samples=120, time_window_len=360):
+        # Disable trigger
+        ff.reg_write(0x213, 0x0)
+        # Disable elink
+        ff.reg_write(0x200, 0x0)
+        ff.reg_write(0x201, 0x0)
+        # Hold elinks in reset
+        ff.reg_write(0x210, 0xffff)
+        ff.reg_write(0x211, 0xffff)
+
+        skip_fee_enable = False
+        # Do SAMPA configuration
+        skip_sampa = []
+        lower_elinks = 0
+        upper_elinks = 0
+
+        # define how many samples are
+        # read before and after signal above threshold, in zero-suppression mode
+        # pre_samples = 5
+        # post_samples = 3
+
+        pre_samples = 0
+        post_samples = 0
+        
+        for i, s in enumerate(ff.sampa):
+            if ((thres > 0) and (ctype == 'zsup')):
+                successful = self.setup_sampa_zero_sup(s, offset, thres, pre_trig_samples, pre_samples, post_samples, time_window_len)
+            elif ((thres > 0) and (ctype == 'bc1')):
+                successful = self.setup_sampa_zero_sup_bcone(s, offset, thres, pre_trig_samples, pre_samples, post_samples, time_window_len)
+            else:
+                successful = self.setup_sampa_normal(s, pre_trig_samples, time_window_len)
+            if (not successful):
+                skip_sampa.append(i)
+                print("\rWarning: i2c i/o issues on SAMPA %i, config incomplete\n\r" % (i))
+
+        if (len(skip_sampa) == 8):
+            skip_fee_enable = True
+            return skip_fee_enable
+        elif (len(skip_sampa) > 0):
+            for ss in skip_sampa:
+                if (ss >= 0 and ss <= 3):
+                    lower_elinks |= (0b1111 << ss)
+                elif (ss >= 4 and ss <= 7):
+                    upper_elinks |= (0b1111 << ss)
+
+        # Enable elinks (lower the reset)
+        ff.reg_write(0x210, lower_elinks)
+        ff.reg_write(0x211, upper_elinks)
+        time.sleep(1) # FIXME: Proably doesn't need this
+        # Enable the Elinks which have established lock
+        ff.reg_write(0x200, ff.reg_read(0x302))
+        ff.reg_write(0x201, ff.reg_read(0x303))
+        time.sleep(1) # FIXME: Proably doesn't need this
+        # SAMPA data stream enable
+        ff.reg_write(0x212, 0x1)
+        # Data trigger enable
+        ff.reg_write(0x213, 0x1)
+        return skip_fee_enable
+
+    def do_fee_config(self, args):
+        if self.do_fee_stream_enable:
+            self.d.reg.fee_stream_enable = 0
+
+        skipped = []
+        for i, f in enumerate(self.fee):
+            if ((self.d.reg.fee_reply[i].rx_ready != 1) or (f.board_sn() == 0)):
+                skipped.append(i)
+                continue
+
+            f.reg_write(0x300, args.shape_gain)
+            print(" %s - FEE: %02i" % (self.hostname, i))#, end='\r')
+            if (args.init_type == "triggered"):
+                # Normal configuration
+                ret = self.configure_fee(f, thres=0, pre_trig_samples=args.pre_samples, time_window_len=args.samples)
+                if (ret):
+                    skipped.append(i)
+                    continue
+            elif (args.init_type == "triggered_zsup"):
+                # Zero Suppression
+                ret = self.configure_fee(f, offset=args.offset, thres=args.thres, pre_trig_samples=args.pre_samples, time_window_len=args.samples)
+                if (ret):
+                    skipped.append(i)
+                    continue
+            elif (args.init_type == "triggered_zsup_bcone"):
+                # Zero Suppression
+                ret = self.configure_fee(f, offset=args.offset, thres=args.thres, ctype='bc1', pre_trig_samples=args.pre_samples, time_window_len=args.samples)
+                if (ret):
+                    skipped.append(i)
+                    continue
+            if self.do_fee_stream_enable:
+                self.d.reg.fee_stream_enable |= (1 << i)
+        return skipped
+
+def fee_init_exec(host, fee_list, args):
+    fee_init = FeeInit(host, fee_list, args.no_stream_enable) 
+
+    if args.init_type == 'test':
+        fee_init.test()
+    if args.init_type == 'stream_enable':
+        fee_init.stream_enable()
+    if args.init_type == 'stream_disable':
+        fee_init.stream_disable()
+    if args.init_type == 'link':
+        fee_init.link_init()
+    if args.init_type == 'fee':
+        fee_init.fee_init(args.elink_enable)
+    if args.init_type == 'sampa':
+        fee_init.sampa_init(args.samples , args.pre_samples, args.reset_sampa, args.elink_enable, args.shape_gain)
+    if args.init_type == 'all':
+        fee_init.link_init()
+        fee_init.fee_init(args.elink_enable)
+        fee_init.sampa_init(args.samples, args.pre_samples, args.reset_sampa, args.elink_enable, args.shape_gain)
+    if args.init_type in ["triggered", "triggered_zsup", "triggered_zsup_bcone"]:
+        skipped = fee_init.do_fee_config(args)
+        if (len(skipped) > 0):
+            print("FEEs skipped:", skipped)
+
+    return 0
+
+if __name__ == "__main__":
+    rlookup = {'R2': [0, 1, 11, 12, 14, 15, 18, 19],
+               'R1': [2, 3, 4, 13, 16, 17],
+               'R3': [5, 6, 7, 8, 9, 10, 20, 21, 22, 23, 24, 25],
+               'TPOT' : [0, 1, 5, 6, 7, 8, 9, 12, 14, 15, 18, 19, 21, 23, 24, 25]}
+#               'TPOT' : [0, 1, 5, 6, 7, 8, 9, 11, 12, 14, 15, 18, 19, 23, 24, 25]}
+
+    
+    argp = argparse.ArgumentParser()
+    argp.add_argument("init_type", type=str, choices=["link", "fee", "sampa", "stream_enable", "stream_disable", "all", "triggered", "triggered_zsup", "triggered_zsup_bcone", "test"], default="all")
+    argp.add_argument("-f", "--fee", nargs='*', type=int, default=range(0, 26))
+    argp.add_argument("-r", "--region", type=str, choices=["R1", "R2", "R3", "TPOT"])
+    argp.add_argument("-p", "--pre-samples", type=int, default=80)
+    argp.add_argument("-P", "--post-samples", type=int, default=5)
+    argp.add_argument("-t", "--thres", type=int, default=290)
+    argp.add_argument("-o", "--offset", type=int, default=240)
+    argp.add_argument("-s", "--samples", type=int, default=360)
+    argp.add_argument("-e", "--elink-enable", type=int, default=0xffffffff)
+    argp.add_argument("-g", "--shape-gain", type=int, default=0)
+    argp.add_argument("-c", "--connect", type=str, nargs='*', default="localhost")
+    argp.add_argument("--connect-tpc", action='store_true', default=False)
+    argp.add_argument("--connect-tpot", action='store_true', default=False)
+    argp.add_argument("--reset-sampa", action='store_true', default=False)
+    argp.add_argument("--no-stream-enable", action='store_false', default=True)
+
+    args = argp.parse_args() 
+
+    if args.region:
+        fee_list = rlookup[args.region]
+    else:
+        fee_list = args.fee
+
+    hostlist = args.connect
+    if args.connect == 'localhost':
+        hostlist = [args.connect]
+    
+    if args.connect_tpc:
+        hostlist = []
+        for i in range(0, 24):
+            hostlist.append("ebdc%02i.sphenix.bnl.gov" % i)
+    if args.connect_tpot:
+        hostlist = []
+        hostlist.append("ebdc39.sphenix.bnl.gov")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=24) as executor:
+        future_to_fee = {executor.submit(fee_init_exec, host, fee_list, args): host for host in hostlist}
+        for future in concurrent.futures.as_completed(future_to_fee):
+            ret = future_to_fee[future]
+            try:
+                data = future.result()
+            except Exception as exc:
+                print('%r generated an exception: %s' % (ret, exc))
+
