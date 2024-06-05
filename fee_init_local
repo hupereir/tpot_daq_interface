@@ -92,7 +92,7 @@ class FeeInit(object):
 
     def test(self):
         for i, f in enumerate(self.fee):
-            print(" %s - FEE %i: %s" % (self.hostname, i, f.board_sn()))
+            print(" %s - FEE %i: %s" % (self.hostname, f.fee_addr, f.board_sn()))
 
     def fee_link_reset(self):
         self.d.reg.si5345_pll.program = 1
@@ -329,11 +329,11 @@ class FeeInit(object):
         skipped = []
         for i, f in enumerate(self.fee):
             if ((self.d.reg.fee_reply[i].rx_ready != 1) or (f.board_sn() == 0)):
-                skipped.append(i)
+                skipped.append(f.fee_addr)
                 continue
 
             f.reg_write(0x300, args.shape_gain)
-            print(" %s - FEE: %02i" % (self.hostname, i))#, end='\r')
+            print(" %s - FEE: %02i" % (self.hostname, f.fee_addr))#, end='\r')
             if (args.init_type == "triggered"):
                 # Normal configuration
                 ret = self.configure_fee(f, thres=0, pre_trig_samples=args.pre_samples, time_window_len=args.samples)
