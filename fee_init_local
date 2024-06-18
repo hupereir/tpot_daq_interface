@@ -200,7 +200,8 @@ class FeeInit(object):
         retry_count = 0
         zscfg = (1 << 8) | (pre_samples << 2) | (post_samples << 5)
         dpcfg = 0x00 
-        vacfg = 0x20
+        # vacfg = 0x20
+        vacfg = 0x30
 
         retry = Retry(inforce_retry=1)
         retry.only(s.send_command, r_args=["SOFTRST"])
@@ -224,7 +225,8 @@ class FeeInit(object):
         retry_count = 0
         pre_post_sample_word = (pre_samples << 2) | (post_samples << 5)
         dpcfg = 0x200 
-        vacfg = 0x20
+        # vacfg = 0x20
+        vacfg = 0x30
 
         retry = Retry(inforce_retry=1)
         retry.only(s.send_command, r_args=["SOFTRST"])
@@ -353,7 +355,7 @@ class FeeInit(object):
                     skipped.append(i)
                     continue
             if self.do_fee_stream_enable:
-                self.d.reg.fee_stream_enable |= (1 << i)
+                self.d.reg.fee_stream_enable |= (1 << f.fee_addr)
         return skipped
 
 def fee_init_exec(host, fee_list, args):
