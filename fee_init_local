@@ -328,7 +328,7 @@ class FeeInit(object):
 
         skipped = []
         for i, f in enumerate(self.fee):
-            if ((self.d.reg.fee_reply[i].rx_ready != 1) or (f.board_sn() == 0)):
+            if ((self.d.reg.fee_reply[f.fee_addr].rx_ready != 1) or (f.board_sn() == 0)):
                 skipped.append(f.fee_addr)
                 continue
 
