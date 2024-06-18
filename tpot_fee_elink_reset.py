@@ -123,11 +123,8 @@ class FeeInit(object):
         ff.reg_write(0x210, lower_elinks)
         ff.reg_write(0x211, upper_elinks)
 
-        # ff.reg_write(0x210, 0)
-        # ff.reg_write(0x211, 0)
-
         # Enable the Elinks which have established lock
-        time.sleep(1)
+        time.sleep(0.7)
         ff.reg_write(0x200, ff.reg_read(0x302))
         ff.reg_write(0x201, ff.reg_read(0x303))        
 
