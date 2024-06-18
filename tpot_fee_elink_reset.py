@@ -89,18 +89,18 @@ class FeeInit(object):
         for i in self.fee_list:
             self.fee.append(fee(i, backend=backend, ip_addr="%s:50051" % (hostname)))
 
-    def reset_elinks(self, ff):
-        
+    def disable_elinks(self, ff):
+
         # keep track of unconfigured sampas and elinks
         skip_sampa = []
         lower_elinks = 0
         upper_elinks = 0
 
         # check which sampa is properly configure by trying to read pre_trigger value
-        retry = Retry(inforce_retry=1)       
+        retry = Retry(inforce_retry=1)
         for s in ff.sampa:
             pre_trigger = retry.read(s.get_pre_trigger)
-            if not retry.is_successful():    
+            if not retry.is_successful():
                 print("Can't get pre trigger for ",s)
                 skip_sampa.append(s)
                 if (ss >= 0 and ss <= 3):
@@ -123,14 +123,17 @@ class FeeInit(object):
         ff.reg_write(0x210, lower_elinks)
         ff.reg_write(0x211, upper_elinks)
 
+        return 0
+
+   def enable_elinks(self, ff):
+
         # Enable the Elinks which have established lock
-        time.sleep(0.7)
         ff.reg_write(0x200, ff.reg_read(0x302))
-        ff.reg_write(0x201, ff.reg_read(0x303))        
+        ff.reg_write(0x201, ff.reg_read(0x303))
 
         # Enable trigger
         ff.reg_write(0x213, 0x1)
-        
+
         return 0
 
     def do_fee_config(self, args):
@@ -140,14 +143,22 @@ class FeeInit(object):
             if ((self.d.reg.fee_reply[f.fee_addr].rx_ready != 1) or (f.board_sn() == 0)):
                 skipped.append(f.fee_addr)
                 continue
-            print(" %s - FEE: %02i" % (self.hostname, f.fee_addr))#, end='\r')
-            self.reset_elinks(f);
+            print(" %s - FEE: %02i - disabling" % (self.hostname, f.fee_addr))#, end='\r')
+            self.disable_elinks(f);
+
+        time.sleep(1)
+        for i, f in enumerate(self.fee):
+            if ((self.d.reg.fee_reply[f.fee_addr].rx_ready != 1) or (f.board_sn() == 0)):
+              continue;
+            print(" %s - FEE: %02i - re-enabling" % (self.hostname, f.fee_addr))#, end='\r')
+            self.enable_elinks(f);
+
         return skipped
 
 def fee_init_exec(host, fee_list, args):
     fee_init = FeeInit(host, fee_list)
     skipped = fee_init.do_fee_config(args)
-    
+
     if (len(skipped) > 0):
       print("FEEs skipped:", skipped)
 
@@ -156,7 +167,7 @@ def fee_init_exec(host, fee_list, args):
 if __name__ == "__main__":
 
     print( "running fee_reset_elinks.py" )
-    
+
     rlookup = {'R2': [0, 1, 11, 12, 14, 15, 18, 19],
                'R1': [2, 3, 4, 13, 16, 17],
                'R3': [5, 6, 7, 8, 9, 10, 20, 21, 22, 23, 24, 25],
@@ -191,7 +202,7 @@ if __name__ == "__main__":
         hostlist.append("ebdc39.sphenix.bnl.gov")
 
     print( "fee_list: ",fee_list )
-        
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=24) as executor:
         future_to_fee = {executor.submit(fee_init_exec, host, fee_list, args): host for host in hostlist}
         for future in concurrent.futures.as_completed(future_to_fee):
