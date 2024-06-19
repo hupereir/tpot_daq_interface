@@ -95,7 +95,7 @@ class FeeInit(object):
     def read_thresholds(self,filename):
         if not os.path.isfile(filename):
             print(f'{filename} does not exist')
-            exit(0)
+            return {}
         # open file
         f = open( filename )
         # parse with JSON
