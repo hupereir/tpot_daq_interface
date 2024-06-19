@@ -102,17 +102,11 @@ class FeeInit(object):
         fee_dict = json.load(f)
         f.close()
         # convert data to the right dictionary
-        nsigma = 5
-        use_maximum = True
         threshold_data = {}
         for fee_data in fee_dict:
             fee_id = fee_data["fee_id"]
-            # compute threshold
-            if use_maximum:
-                threshold = round( 4*(fee_data["ped_max"]+nsigma*fee_data["rms_max"]) )
-            else:
-                threshold = round( 4*(fee_data["ped_mean"]+nsigma*fee_data["rms_mean"]) )
-            threshold_data[str(fee_id)]=threshold
+            threshold = round(fee_data["threshold"])
+            threshold_data[str(fee_id)] = threshold
         return threshold_data
 
     ### test
@@ -369,6 +363,7 @@ class FeeInit(object):
         if self.do_fee_stream_enable:
             self.d.reg.fee_stream_enable = 0
 
+        # read threshold from file
         if args.thresvar:
             threshold_data = self.read_thresholds(args.thresvar)
             
@@ -385,20 +380,23 @@ class FeeInit(object):
                 threshold = args.thres
 
             f.reg_write(0x300, args.shape_gain)
-            print(" %s - FEE: %02i" % (self.hostname, f.fee_addr), " threshold: ", threshold )
             if (args.init_type == "triggered"):
                 # Normal configuration
+                print(" %s - FEE: %02i" % (self.hostname, f.fee_addr))
                 ret = self.configure_fee(f, thres=0, pre_trig_samples=args.pre_samples, time_window_len=args.samples)
                 if (ret):
                     skipped.append(i)
                     continue
             elif (args.init_type == "triggered_zsup"):
+                # Zero Suppression
+                print(" %s - FEE: %02i" % (self.hostname, f.fee_addr), " threshold: ", threshold )
                 ret = self.configure_fee(f, offset=args.offset, thres=threshold, pre_trig_samples=args.pre_samples, time_window_len=args.samples)
                 if (ret):
                     skipped.append(i)
                     continue
             elif (args.init_type == "triggered_zsup_bcone"):
                 # Zero Suppression
+                print(" %s - FEE: %02i" % (self.hostname, f.fee_addr), " threshold: ", threshold )
                 ret = self.configure_fee(f, offset=args.offset, thres=threshold, ctype='bc1', pre_trig_samples=args.pre_samples, time_window_len=args.samples)
                 if (ret):
                     skipped.append(i)
@@ -446,8 +444,8 @@ if __name__ == "__main__":
     argp.add_argument("-f", "--fee", nargs='*', type=int, default=range(0, 26))
     argp.add_argument("-r", "--region", type=str, choices=["R1", "R2", "R3", "TPOT"])
     argp.add_argument("-p", "--pre-samples", type=int, default=80)
-    argp.add_argument("-P", "--post-samples", type=int, default=5)
-    argp.add_argument("-t", "--thres", type=int, default=290)
+    #argp.add_argument("-P", "--post-samples", type=int, default=5)
+    argp.add_argument("-t", "--thres", type=int, default=0)
     argp.add_argument("-tt", "--thresvar", type=str)
     argp.add_argument("-o", "--offset", type=int, default=240)
     argp.add_argument("-s", "--samples", type=int, default=360)
