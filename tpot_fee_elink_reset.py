@@ -125,7 +125,7 @@ class FeeInit(object):
 
         return 0
 
-   def enable_elinks(self, ff):
+    def enable_elinks(self, ff):
 
         # Enable the Elinks which have established lock
         ff.reg_write(0x200, ff.reg_read(0x302))
@@ -149,7 +149,7 @@ class FeeInit(object):
         time.sleep(1)
         for i, f in enumerate(self.fee):
             if ((self.d.reg.fee_reply[f.fee_addr].rx_ready != 1) or (f.board_sn() == 0)):
-              continue;
+                continue
             print(" %s - FEE: %02i - re-enabling" % (self.hostname, f.fee_addr))#, end='\r')
             self.enable_elinks(f);
 
