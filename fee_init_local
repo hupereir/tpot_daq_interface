@@ -3,6 +3,7 @@ import sys, os
 import time
 import argparse
 import concurrent.futures
+import json
 
 from sphenix_pytpc import fee
 import sphenix_pytpc.damserv_grpc_client as client
@@ -90,15 +91,42 @@ class FeeInit(object):
         for i in self.fee_list:
             self.fee.append(fee(i, backend=backend, ip_addr="%s:50051" % (hostname)))
 
+    ### read threshold data from file
+    def read_thresholds(self,filename):
+        if not os.path.isfile(filename):
+            print(f'{filename} does not exist')
+            exit(0)
+        # open file
+        f = open( filename )
+        # parse with JSON
+        fee_dict = json.load(f)
+        f.close()
+        # convert data to the right dictionary
+        nsigma = 5
+        use_maximum = True
+        threshold_data = {}
+        for fee_data in fee_dict:
+            fee_id = fee_data["fee_id"]
+            # compute threshold
+            if use_maximum:
+                threshold = round( 4*(fee_data["ped_max"]+nsigma*fee_data["rms_max"]) )
+            else:
+                threshold = round( 4*(fee_data["ped_mean"]+nsigma*fee_data["rms_mean"]) )
+            threshold_data[str(fee_id)]=threshold
+        return threshold_data
+
+    ### test
     def test(self):
         for i, f in enumerate(self.fee):
             print(" %s - FEE %i: %s" % (self.hostname, f.fee_addr, f.board_sn()))
 
+    ### reset link
     def fee_link_reset(self):
         self.d.reg.si5345_pll.program = 1
         while self.d.reg.si5345_pll.nLOL != 1:
             time.sleep(0.1)
 
+    ### return true if a given fee is ready
     def fee_ready(self, i):
         timeout = 0
         while (self.d.reg.fee_reply[i].rx_ready != 1) and (timeout < 10):
@@ -106,6 +134,7 @@ class FeeInit(object):
             timeout += 1
         return (self.d.reg.fee_reply[i].rx_ready == 1) and (timeout < 10)
 
+    ### returns true if all FEE are ready
     def fee_group_ready(self):
         timeout = 0
         ready = False 
@@ -118,6 +147,7 @@ class FeeInit(object):
             timeout += 1
         return ready
 
+    ### initialize link
     def link_init(self):
         self.d.reset()
 
@@ -131,6 +161,7 @@ class FeeInit(object):
         while not self.fee_group_ready():
             self.fee_link_reset()
 
+    ### initialize fee
     def fee_init(self, elink_enable):
         if self.do_fee_stream_enable:
             self.d.reg.fee_stream_enable = 0
@@ -145,6 +176,7 @@ class FeeInit(object):
             for i in self.fee_list:
                 self.d.reg.fee_stream_enable |= (1 << i)
 
+    ### initialize sampa
     def sampa_init(self, twlen, pre_trig, sampa_reset, elink_enable, shape_gain):
         if self.do_fee_stream_enable:
             self.d.reg.fee_stream_enable = 0
@@ -186,16 +218,19 @@ class FeeInit(object):
             for i in self.fee_list:
                 self.d.reg.fee_stream_enable |= (1 << i)
 
+    ### enable stream for all selected fee
     def stream_enable(self): 
         if self.do_fee_stream_enable:
             for i in self.fee_list:
                 self.d.reg.fee_stream_enable |= (1 << i)
 
+    ### disable stream for all selected fee
     def stream_disable(self): 
         if self.do_fee_stream_enable:
             for i in self.fee_list:
                 self.d.reg.fee_stream_enable &= ~(1 << i)
 
+    ### setup a given sampa for zero suppression and bc1 baseline correction
     def setup_sampa_zero_sup_bcone(self, s, offset, threshold, pre_trig_samples, pre_samples, post_samples, window_length):
         retry_count = 0
         zscfg = (1 << 8) | (pre_samples << 2) | (post_samples << 5)
@@ -221,6 +256,8 @@ class FeeInit(object):
         retry.only(s.send_command, r_args=["SOFTRST"])
         return retry.is_totally_successful()
 
+
+    ### setup a given sampa for zero suppression and bc3 baseline correction
     def setup_sampa_zero_sup(self, s, offset, threshold, pre_trig_samples, pre_samples, post_samples, window_length):
         retry_count = 0
         pre_post_sample_word = (pre_samples << 2) | (post_samples << 5)
@@ -246,6 +283,7 @@ class FeeInit(object):
         retry.only(s.send_command, r_args=["SOFTRST"])
         return retry.is_totally_successful()
 
+    ### setup a given sampa for non-zero suppressed
     def setup_sampa_normal(self, s, pre_samples, window_length):
         retry = Retry(inforce_retry=1)
         retry.only(s.send_command, r_args=["SOFTRST"])
@@ -265,6 +303,7 @@ class FeeInit(object):
         retry.only(s.send_command, r_args=["SOFTRST"])
         return retry.is_totally_successful()
 
+    ### configure fee
     def configure_fee(self, ff, ctype='zsup', offset=240, thres=260, pre_trig_samples=120, time_window_len=360):
         # Disable trigger
         ff.reg_write(0x213, 0x0)
@@ -313,11 +352,13 @@ class FeeInit(object):
         # Enable elinks (lower the reset)
         ff.reg_write(0x210, lower_elinks)
         ff.reg_write(0x211, upper_elinks)
-        time.sleep(1) # FIXME: Proably doesn't need this
+        time.sleep(1)
+        
         # Enable the Elinks which have established lock
         ff.reg_write(0x200, ff.reg_read(0x302))
         ff.reg_write(0x201, ff.reg_read(0x303))
-        time.sleep(1) # FIXME: Proably doesn't need this
+        time.sleep(1)
+
         # SAMPA data stream enable
         ff.reg_write(0x212, 0x1)
         # Data trigger enable
@@ -328,14 +369,23 @@ class FeeInit(object):
         if self.do_fee_stream_enable:
             self.d.reg.fee_stream_enable = 0
 
+        if args.thresvar:
+            threshold_data = self.read_thresholds(args.thresvar)
+            
         skipped = []
         for i, f in enumerate(self.fee):
             if ((self.d.reg.fee_reply[f.fee_addr].rx_ready != 1) or (f.board_sn() == 0)):
                 skipped.append(f.fee_addr)
                 continue
 
+            # Zero Suppression
+            try:
+                threshold = threshold_data[str(f.fee_addr)]
+            except:
+                threshold = args.thres
+
             f.reg_write(0x300, args.shape_gain)
-            print(" %s - FEE: %02i" % (self.hostname, f.fee_addr))#, end='\r')
+            print(" %s - FEE: %02i" % (self.hostname, f.fee_addr), " threshold: ", threshold )
             if (args.init_type == "triggered"):
                 # Normal configuration
                 ret = self.configure_fee(f, thres=0, pre_trig_samples=args.pre_samples, time_window_len=args.samples)
@@ -343,14 +393,13 @@ class FeeInit(object):
                     skipped.append(i)
                     continue
             elif (args.init_type == "triggered_zsup"):
-                # Zero Suppression
-                ret = self.configure_fee(f, offset=args.offset, thres=args.thres, pre_trig_samples=args.pre_samples, time_window_len=args.samples)
+                ret = self.configure_fee(f, offset=args.offset, thres=threshold, pre_trig_samples=args.pre_samples, time_window_len=args.samples)
                 if (ret):
                     skipped.append(i)
                     continue
             elif (args.init_type == "triggered_zsup_bcone"):
                 # Zero Suppression
-                ret = self.configure_fee(f, offset=args.offset, thres=args.thres, ctype='bc1', pre_trig_samples=args.pre_samples, time_window_len=args.samples)
+                ret = self.configure_fee(f, offset=args.offset, thres=threshold, ctype='bc1', pre_trig_samples=args.pre_samples, time_window_len=args.samples)
                 if (ret):
                     skipped.append(i)
                     continue
@@ -399,6 +448,7 @@ if __name__ == "__main__":
     argp.add_argument("-p", "--pre-samples", type=int, default=80)
     argp.add_argument("-P", "--post-samples", type=int, default=5)
     argp.add_argument("-t", "--thres", type=int, default=290)
+    argp.add_argument("-tt", "--thresvar", type=str)
     argp.add_argument("-o", "--offset", type=int, default=240)
     argp.add_argument("-s", "--samples", type=int, default=360)
     argp.add_argument("-e", "--elink-enable", type=int, default=0xffffffff)
