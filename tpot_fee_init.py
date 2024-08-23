@@ -8,8 +8,10 @@ def main():
     # first run full command on all TPOT FEEs
     # fee_init_command = '/home/phnxrc/operations/TPOT/tpot_daq_interface/fee_init_local triggered --connect-tpot --pre-samples 86 --samples 25 --shape-gain 6 --no-stream-enable'
 
-    fee_init_command = '/home/phnxrc/operations/TPOT/tpot_daq_interface/fee_init_local triggered_zsup --connect-tpot --pre-samples 86 --samples 25 --shape-gain 6 --thres 520'
-
+    threshold_file = '/home/phnxrc/operations/TPOT/tpot_daq_interface/TPOT_thresholds.json'
+    # fee_init_command = '/home/phnxrc/operations/TPOT/tpot_daq_interface/fee_init_local triggered_zsup --connect-tpot --pre-samples 86 --samples 25 --shape-gain 6 --thres 520'
+    fee_init_command = '/home/phnxrc/operations/TPOT/tpot_daq_interface/fee_init_local triggered_zsup --connect-tpot --pre-samples 86 --samples 1023 --shape-gain 6 --thres 520'
+    fee_init_command = fee_init_command + ' --thresvar ' + threshold_file
     
     print( 'fee_init_command: ', fee_init_command )
     
