@@ -37,12 +37,12 @@ def monitor(ip_addr):
 def Check_err():
     
     ip_addr ='ebdc39:50051'
-    print(ip_addr)
+    print( 'tpot_fee_mask - checking error in ',ip_addr )
     errfee=monitor(ip_addr)
 
     # do nothing if no error found
     if not errfee:
-        print( 'tpot_fee_mask  - nothing to do' )
+         return
     
     command = '/home/phnxrc/operations/TPOT/tpot_lv_interface/tpot_lv_off.py'
     for fee in errfee:
@@ -60,4 +60,8 @@ def Check_err():
     output = result.stdout.decode('utf8');
     print( output )
 
-Check_err()
+if __name__ == '__main__':
+    # infinite loop. This is intended to run in the background
+    while True:
+        Check_err()
+        time.sleep(30)
