@@ -8,7 +8,7 @@ def main():
     threshold_file = '/home/phnxrc/operations/TPOT/tpot_daq_interface/TPOT_thresholds.json'
 
     # default readout configuration
-    fee_init_command = '/home/phnxrc/operations/TPOT/tpot_daq_interface/fee_init_local triggered_zsup --connect-tpot --pre-samples 69 --samples 25 --shape-gain 6 --thres 520'
+    fee_init_command = '/home/phnxrc/operations/TPOT/tpot_daq_interface/fee_init_local triggered_zsup --connect-tpot --pre-samples 76 --samples 25 --shape-gain 6 --thres 520'
 
     ### extended readout configuration
     # fee_init_command = '/home/phnxrc/operations/TPOT/tpot_daq_interface/fee_init_local triggered_zsup --connect-tpot --pre-samples 76 --samples 1023 --shape-gain 6 --thres 520'
