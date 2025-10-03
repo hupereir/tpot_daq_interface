@@ -1,0 +1,66 @@
+[
+  {
+    "fee_id": 6,
+    "threshold": 584
+  },
+  {
+    "fee_id": 9,
+    "threshold": 540
+  },
+  {
+    "fee_id": 0,
+    "threshold": 460
+  },
+  {
+    "fee_id": 19,
+    "threshold": 488
+  },
+  {
+    "fee_id": 5,
+    "threshold": 600
+  },
+  {
+    "fee_id": 21,
+    "threshold": 512
+  },
+  {
+    "fee_id": 24,
+    "threshold": 488
+  },
+  {
+    "fee_id": 15,
+    "threshold": 524
+  },
+  {
+    "fee_id": 8,
+    "threshold": 584
+  },
+  {
+    "fee_id": 23,
+    "threshold": 632
+  },
+  {
+    "fee_id": 1,
+    "threshold": 460
+  },
+  {
+    "fee_id": 18,
+    "threshold": 476
+  },
+  {
+    "fee_id": 7,
+    "threshold": 620
+  },
+  {
+    "fee_id": 12,
+    "threshold": 492
+  },
+  {
+    "fee_id": 25,
+    "threshold": 500
+  },
+  {
+    "fee_id": 14,
+    "threshold": 508
+  }
+]
